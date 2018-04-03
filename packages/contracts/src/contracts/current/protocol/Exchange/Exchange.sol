@@ -18,17 +18,20 @@
 
 pragma solidity ^0.4.21;
 pragma experimental ABIEncoderV2;
+pragma experimental "v0.5.0";
 
 import "./MixinExchangeCore.sol";
 import "./MixinSignatureValidator.sol";
 import "./MixinSettlementProxy.sol";
 import "./MixinWrapperFunctions.sol";
+import "./MixinTransactions.sol";
 
 contract Exchange is
     MixinExchangeCore,
     MixinSignatureValidator,
     MixinSettlementProxy,
-    MixinWrapperFunctions
+    MixinWrapperFunctions,
+    MixinTransactions
 {
     string constant public VERSION = "2.0.1-alpha";
 
@@ -40,5 +43,6 @@ contract Exchange is
         MixinSignatureValidator()
         MixinSettlementProxy(_tokenTransferProxy, _zrxToken)
         MixinWrapperFunctions()
+        MixinTransactions()
     {}
 }

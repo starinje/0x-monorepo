@@ -18,10 +18,12 @@
 
 pragma solidity ^0.4.21;
 pragma experimental ABIEncoderV2;
+pragma experimental "v0.5.0";
 
 import "./mixins/MExchangeCore.sol";
 import "./mixins/MSettlement.sol";
 import "./mixins/MSignatureValidator.sol";
+import "./mixins/MTransactions.sol";
 import "./LibOrder.sol";
 import "./LibErrors.sol";
 import "./LibPartialAmount.sol";
@@ -35,6 +37,7 @@ contract MixinExchangeCore is
     MExchangeCore,
     MSettlement,
     MSignatureValidator,
+    MTransactions,
     SafeMath,
     LibErrors,
     LibPartialAmount
@@ -47,7 +50,7 @@ contract MixinExchangeCore is
     // Orders with a salt less than their maker's epoch are considered cancelled
     mapping (address => uint256) public makerEpoch;
 
-    event LogFill(
+    event Fill(
         address indexed makerAddress,
         address takerAddress,
         address indexed feeRecipientAddress,
@@ -60,7 +63,7 @@ contract MixinExchangeCore is
         bytes32 indexed orderHash
     );
 
-    event LogCancel(
+    event Cancel(
         address indexed makerAddress,
         address indexed feeRecipientAddress,
         address makerTokenAddress,
@@ -68,7 +71,7 @@ contract MixinExchangeCore is
         bytes32 indexed orderHash
     );
 
-    event LogCancelUpTo(
+    event CancelUpTo(
         address indexed maker,
         uint256 makerEpoch
     );
@@ -94,7 +97,7 @@ contract MixinExchangeCore is
 
         // Check if order has been cancelled
         if (cancelled[orderHash]) {
-            LogError(uint8(Errors.ORDER_CANCELLED), orderHash);
+            emit ExchangeError(uint8(Errors.ORDER_CANCELLED), orderHash);
             return 0;
         }
 
@@ -105,36 +108,42 @@ contract MixinExchangeCore is
             require(order.takerTokenAmount > 0);
             require(isValidSignature(orderHash, order.makerAddress, signature));
         }
+        
+        // Validate sender
+        if (order.senderAddress != address(0)) {
+            require(order.senderAddress == msg.sender);
+        }
 
-        // Validate taker
+        // Validate transaction signed by taker
+        address takerAddress = getSignerAddress();
         if (order.takerAddress != address(0)) {
-            require(order.takerAddress == msg.sender);
+            require(order.takerAddress == takerAddress);
         }
         require(takerTokenFillAmount > 0);
 
         // Validate order expiration
         if (block.timestamp >= order.expirationTimeSeconds) {
-            LogError(uint8(Errors.ORDER_EXPIRED), orderHash);
+            emit ExchangeError(uint8(Errors.ORDER_EXPIRED), orderHash);
             return 0;
         }
 
         // Validate order availability
         uint256 remainingTakerTokenAmount = safeSub(order.takerTokenAmount, filled[orderHash]);
         if (remainingTakerTokenAmount == 0) {
-            LogError(uint8(Errors.ORDER_FULLY_FILLED), orderHash);
+            emit ExchangeError(uint8(Errors.ORDER_FULLY_FILLED), orderHash);
             return 0;
         }
 
         // Validate fill order rounding
         takerTokenFilledAmount = min256(takerTokenFillAmount, remainingTakerTokenAmount);
         if (isRoundingError(takerTokenFilledAmount, order.takerTokenAmount, order.makerTokenAmount)) {
-            LogError(uint8(Errors.ROUNDING_ERROR_TOO_LARGE), orderHash);
+            emit ExchangeError(uint8(Errors.ROUNDING_ERROR_TOO_LARGE), orderHash);
             return 0;
         }
 
         // Validate order is not cancelled
         if (order.salt < makerEpoch[order.makerAddress]) {
-            LogError(uint8(Errors.ORDER_CANCELLED), orderHash);
+            emit ExchangeError(uint8(Errors.ORDER_CANCELLED), orderHash);
             return 0;
         }
 
@@ -142,13 +151,16 @@ contract MixinExchangeCore is
         filled[orderHash] = safeAdd(filled[orderHash], takerTokenFilledAmount);
 
         // Settle order
-        var (makerTokenFilledAmount, makerFeeAmountPaid, takerFeeAmountPaid) =
-            settleOrder(order, msg.sender, takerTokenFilledAmount);
-
+        uint256 makerTokenFilledAmount;
+        uint256 makerFeeAmountPaid;
+        uint256 takerFeeAmountPaid;
+        (makerTokenFilledAmount, makerFeeAmountPaid, takerFeeAmountPaid) =
+            settleOrder(order, takerAddress, takerTokenFilledAmount);
+        
         // Log order
-        LogFill(
+        emit Fill(
             order.makerAddress,
-            msg.sender,
+            takerAddress,
             order.feeRecipientAddress,
             order.makerTokenAddress,
             order.takerTokenAddress,
@@ -174,21 +186,29 @@ contract MixinExchangeCore is
         // Validate the order
         require(order.makerTokenAmount > 0);
         require(order.takerTokenAmount > 0);
-        require(order.makerAddress == msg.sender);
 
+        // Validate sender
+        if (order.senderAddress != address(0)) {
+            require(order.senderAddress == msg.sender);
+        }
+        
+        // Validate transaction signed by maker
+        address makerAddress = getSignerAddress();
+        require(order.makerAddress == makerAddress);
+        
         if (block.timestamp >= order.expirationTimeSeconds) {
-            LogError(uint8(Errors.ORDER_EXPIRED), orderHash);
+            emit ExchangeError(uint8(Errors.ORDER_EXPIRED), orderHash);
             return false;
         }
 
         if (cancelled[orderHash]) {
-            LogError(uint8(Errors.ORDER_CANCELLED), orderHash);
+            emit ExchangeError(uint8(Errors.ORDER_CANCELLED), orderHash);
             return false;
         }
 
         cancelled[orderHash] = true;
 
-        LogCancel(
+        emit Cancel(
             order.makerAddress,
             order.feeRecipientAddress,
             order.makerTokenAddress,
@@ -205,7 +225,7 @@ contract MixinExchangeCore is
         uint256 newMakerEpoch = salt + 1;                // makerEpoch is initialized to 0, so to cancelUpTo we need salt+1
         require(newMakerEpoch > makerEpoch[msg.sender]); // epoch must be monotonically increasing
         makerEpoch[msg.sender] = newMakerEpoch;
-        LogCancelUpTo(msg.sender, newMakerEpoch);
+        emit CancelUpTo(msg.sender, newMakerEpoch);
     }
 
     /// @dev Checks if rounding error > 0.1%.

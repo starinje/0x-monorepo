@@ -15,21 +15,27 @@
   limitations under the License.
 
 */
-
 pragma solidity ^0.4.21;
 pragma experimental ABIEncoderV2;
 
-contract LibErrors {
+import "./MSignatureValidator.sol";
 
-    // Error Codes
-    enum Errors {
-        ORDER_EXPIRED,                    // Order has already expired
-        ORDER_FULLY_FILLED,               // Order has already been fully filled
-        ORDER_CANCELLED,                  // Order has already been cancelled
-        ROUNDING_ERROR_TOO_LARGE,         // Rounding error too large
-        INSUFFICIENT_BALANCE_OR_ALLOWANCE // Insufficient balance or allowance for token transfer
-    }
+contract MTransactions is MSignatureValidator {
 
-    event ExchangeError(uint8 indexed errorId, bytes32 indexed orderHash);
+    /// @dev Executes an exchange method call in the context of signer.
+    /// @param salt Arbitrary number to ensure uniqueness of transaction hash.
+    /// @param signer Address of transaction signer.
+    /// @param data AbiV2 encoded calldata.
+    /// @param signature Proof of signer transaction by signer.
+    function executeTransaction(
+        uint256 salt,
+        address signer,
+        bytes data,
+        bytes signature)
+        external;
 
+    function getSignerAddress()
+        internal
+        view
+        returns (address);
 }
