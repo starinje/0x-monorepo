@@ -9,17 +9,15 @@ import * as Web3 from 'web3';
 
 import { DummyTokenContract } from '../../src/contract_wrappers/generated/dummy_token';
 import {
+    CancelContractEventArgs,
     ExchangeContract,
-    LogCancelContractEventArgs,
-    LogErrorContractEventArgs,
-    LogFillContractEventArgs,
+    ExchangeErrorContractEventArgs,
+    FillContractEventArgs,
 } from '../../src/contract_wrappers/generated/exchange';
 import { TokenTransferProxyContract } from '../../src/contract_wrappers/generated/token_transfer_proxy';
 import { Balances } from '../../src/utils/balances';
 import { constants } from '../../src/utils/constants';
-import { crypto } from '../../src/utils/crypto';
 import { ExchangeWrapper } from '../../src/utils/exchange_wrapper';
-import { LogDecoder } from '../../src/utils/log_decoder';
 import { OrderFactory } from '../../src/utils/order_factory';
 import { orderUtils } from '../../src/utils/order_utils';
 import { BalancesByOwner, ContractName, ExchangeContractErrs, SignatureType, SignedOrder } from '../../src/utils/types';
@@ -30,9 +28,8 @@ import { web3, web3Wrapper } from '../utils/web3_wrapper';
 chaiSetup.configure();
 const expect = chai.expect;
 const blockchainLifecycle = new BlockchainLifecycle(web3Wrapper);
-const logDecoder = new LogDecoder(constants.TESTRPC_NETWORK_ID);
 
-describe('Exchange', () => {
+describe('Exchange core', () => {
     let makerAddress: string;
     let tokenOwner: string;
     let takerAddress: string;
@@ -123,6 +120,7 @@ describe('Exchange', () => {
             }),
             zrx.setBalance.sendTransactionAsync(makerAddress, INITIAL_BALANCE, { from: tokenOwner }),
             zrx.setBalance.sendTransactionAsync(takerAddress, INITIAL_BALANCE, { from: tokenOwner }),
+            zrx.setBalance.sendTransactionAsync(feeRecipientAddress, INITIAL_BALANCE, { from: tokenOwner }),
         ]);
     });
     beforeEach(async () => {
@@ -396,7 +394,7 @@ describe('Exchange', () => {
             const res = await exWrapper.fillOrderAsync(signedOrder, takerAddress, {
                 takerTokenFillAmount: signedOrder.takerTokenAmount,
             });
-            const log = logDecoder.decodeLogOrThrow(res.logs[0]) as LogWithDecodedArgs<LogFillContractEventArgs>;
+            const log = res.logs[0] as LogWithDecodedArgs<FillContractEventArgs>;
             expect(log.args.takerTokenFilledAmount).to.be.bignumber.equal(
                 signedOrder.takerTokenAmount.minus(takerTokenFillAmount),
             );
@@ -434,14 +432,12 @@ describe('Exchange', () => {
             });
             expect(res.logs).to.have.length(1);
 
-            const log = logDecoder.decodeLogOrThrow(res.logs[0]) as LogWithDecodedArgs<LogFillContractEventArgs>;
+            const log = res.logs[0] as LogWithDecodedArgs<FillContractEventArgs>;
             const logArgs = log.args;
             const expectedFilledMakerTokenAmount = signedOrder.makerTokenAmount.div(divisor);
             const expectedFilledTakerTokenAmount = signedOrder.takerTokenAmount.div(divisor);
             const expectedFeeMPaid = signedOrder.makerFeeAmount.div(divisor);
             const expectedFeeTPaid = signedOrder.takerFeeAmount.div(divisor);
-            const tokensHashBuff = crypto.solSHA3([signedOrder.makerTokenAddress, signedOrder.takerTokenAddress]);
-            const expectedTokens = ethUtil.bufferToHex(tokensHashBuff);
 
             expect(signedOrder.makerAddress).to.be.equal(logArgs.makerAddress);
             expect(takerAddress).to.be.equal(logArgs.takerAddress);
@@ -465,14 +461,12 @@ describe('Exchange', () => {
             });
             expect(res.logs).to.have.length(1);
 
-            const log = logDecoder.decodeLogOrThrow(res.logs[0]) as LogWithDecodedArgs<LogFillContractEventArgs>;
+            const log = res.logs[0] as LogWithDecodedArgs<FillContractEventArgs>;
             const logArgs = log.args;
             const expectedFilledMakerTokenAmount = signedOrder.makerTokenAmount.div(divisor);
             const expectedFilledTakerTokenAmount = signedOrder.takerTokenAmount.div(divisor);
             const expectedFeeMPaid = new BigNumber(0);
             const expectedFeeTPaid = new BigNumber(0);
-            const tokensHashBuff = crypto.solSHA3([signedOrder.makerTokenAddress, signedOrder.takerTokenAddress]);
-            const expectedTokens = ethUtil.bufferToHex(tokensHashBuff);
 
             expect(signedOrder.makerAddress).to.be.equal(logArgs.makerAddress);
             expect(takerAddress).to.be.equal(logArgs.takerAddress);
@@ -588,7 +582,7 @@ describe('Exchange', () => {
 
             const res = await exWrapper.fillOrderAsync(signedOrder, takerAddress);
             expect(res.logs).to.have.length(1);
-            const log = logDecoder.decodeLogOrThrow(res.logs[0]) as LogWithDecodedArgs<LogErrorContractEventArgs>;
+            const log = res.logs[0] as LogWithDecodedArgs<ExchangeErrorContractEventArgs>;
             const errCode = log.args.errorId;
             expect(errCode).to.be.equal(ExchangeContractErrs.ERROR_ORDER_EXPIRED);
         });
@@ -599,7 +593,7 @@ describe('Exchange', () => {
 
             const res = await exWrapper.fillOrderAsync(signedOrder, takerAddress);
             expect(res.logs).to.have.length(1);
-            const log = logDecoder.decodeLogOrThrow(res.logs[0]) as LogWithDecodedArgs<LogErrorContractEventArgs>;
+            const log = res.logs[0] as LogWithDecodedArgs<ExchangeErrorContractEventArgs>;
             const errCode = log.args.errorId;
             expect(errCode).to.be.equal(ExchangeContractErrs.ERROR_ORDER_FULLY_FILLED);
         });
@@ -646,7 +640,7 @@ describe('Exchange', () => {
             const res = await exWrapper.cancelOrderAsync(signedOrder, makerAddress);
             expect(res.logs).to.have.length(1);
 
-            const log = logDecoder.decodeLogOrThrow(res.logs[0]) as LogWithDecodedArgs<LogCancelContractEventArgs>;
+            const log = res.logs[0] as LogWithDecodedArgs<CancelContractEventArgs>;
             const logArgs = log.args;
 
             expect(signedOrder.makerAddress).to.be.equal(logArgs.makerAddress);
@@ -661,7 +655,7 @@ describe('Exchange', () => {
 
             const res = await exWrapper.cancelOrderAsync(signedOrder, makerAddress);
             expect(res.logs).to.have.length(1);
-            const log = logDecoder.decodeLogOrThrow(res.logs[0]) as LogWithDecodedArgs<LogErrorContractEventArgs>;
+            const log = res.logs[0] as LogWithDecodedArgs<ExchangeErrorContractEventArgs>;
             const errCode = log.args.errorId;
             expect(errCode).to.be.equal(ExchangeContractErrs.ERROR_ORDER_CANCELLED);
         });
@@ -673,7 +667,7 @@ describe('Exchange', () => {
 
             const res = await exWrapper.cancelOrderAsync(signedOrder, makerAddress);
             expect(res.logs).to.have.length(1);
-            const log = logDecoder.decodeLogOrThrow(res.logs[0]) as LogWithDecodedArgs<LogErrorContractEventArgs>;
+            const log = res.logs[0] as LogWithDecodedArgs<ExchangeErrorContractEventArgs>;
             const errCode = log.args.errorId;
             expect(errCode).to.be.equal(ExchangeContractErrs.ERROR_ORDER_EXPIRED);
         });
