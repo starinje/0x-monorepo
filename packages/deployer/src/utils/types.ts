@@ -32,6 +32,8 @@ export interface ContractNetworkData {
     source_map: string;
     source_map_runtime: string;
     sources: string[];
+    devdoc: any;
+    userdoc: any;
 }
 
 export interface SolcErrors {

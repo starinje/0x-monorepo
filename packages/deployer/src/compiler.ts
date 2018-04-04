@@ -165,14 +165,51 @@ export class Compiler {
         logUtils.log(`Compiling ${fileName} with Solidity v${solcVersion}...`);
         const source = this._contractSources[fileName];
         const input = {
-            [fileName]: source,
+            [fileName]: {
+                'content': source
+            },
         };
         const sourcesToCompile = {
-            sources: input,
+            'language': 'Solidity',
+            'sources': input,
+            'settings':{
+                'outputSelection': {
+                    "*": {
+                        "*": [ "userdoc", "devdoc" ]
+                    },
+                }
+            }
         };
-        const compiled = solcInstance.compile(sourcesToCompile, Number(this._optimizerEnabled), importPath =>
-            findImportIfExist(this._contractSources, importPath),
-        );
+
+        const input1 = {
+            'language': 'Solidity',
+            'settings': {
+              'outputSelection': {
+                '*': {
+                  '*': [ 'evm.bytecode' ]
+                }
+              }
+            },
+            'sources': {
+              'lib.sol': {
+                'content': 'library L { function f() returns (uint) { return 7; } }'
+              },
+              'cont.sol': {
+                'content': 'import "lib.sol"; contract x { function g() { L.f(); } }'
+              }
+            }
+          };
+
+        console.log(solcInstance)
+        console.log(sourcesToCompile)
+        const sourcesToCompileJson = JSON.stringify(sourcesToCompile)
+        console.log(typeof(sourcesToCompileJson))
+
+        const compiled = JSON.parse(solcInstance.compileStandardWrapper(sourcesToCompileJson, () => {
+            console.log('in callback...')
+        }));
+
+        console.log(JSON.stringify(compiled))
 
         if (!_.isUndefined(compiled.errors)) {
             const SOLIDITY_WARNING_PREFIX = 'Warning';
@@ -195,18 +232,30 @@ export class Compiler {
         }
         const contractName = path.basename(fileName, constants.SOLIDITY_FILE_EXTENSION);
         const contractIdentifier = `${fileName}:${contractName}`;
-        if (_.isUndefined(compiled.contracts[contractIdentifier])) {
+
+        console.log('right here...')
+        console.log(contractName)
+        console.log(contractIdentifier)
+
+        if (_.isUndefined(compiled.contracts[fileName][contractName])) {
             throw new Error(
                 `Contract ${contractName} not found in ${fileName}. Please make sure your contract has the same name as it's file name`,
             );
         }
-        const abi: ContractAbi = JSON.parse(compiled.contracts[contractIdentifier].interface);
-        const bytecode = `0x${compiled.contracts[contractIdentifier].bytecode}`;
-        const runtimeBytecode = `0x${compiled.contracts[contractIdentifier].runtimeBytecode}`;
-        const sourceMap = compiled.contracts[contractIdentifier].srcmap;
-        const sourceMapRuntime = compiled.contracts[contractIdentifier].srcmapRuntime;
+
+        console.log('interface')
+        console.log(compiled.contracts[fileName][contractName].abi)
+
+        const abi: ContractAbi = compiled.contracts[fileName][contractName].abi;
+        const bytecode = `0x${compiled.contracts[fileName][contractName].bytecode}`;
+        const runtimeBytecode = `0x${compiled.contracts[fileName][contractName].runtimeBytecode}`;
+        const sourceMap = compiled.contracts[fileName][contractName].srcmap;
+        const sourceMapRuntime = compiled.contracts[fileName][contractName].srcmapRuntime;
         const sources = _.keys(compiled.sources);
         const updated_at = Date.now();
+        const devdoc = compiled.contracts[fileName][contractName].devdoc;
+        const userdoc = compiled.contracts[fileName][contractName].userdoc;
+
         const contractNetworkData: ContractNetworkData = {
             solc_version: solcVersion,
             keccak256: sourceHash,
@@ -219,6 +268,8 @@ export class Compiler {
             source_map: sourceMap,
             source_map_runtime: sourceMapRuntime,
             sources,
+            devdoc,
+            userdoc
         };
 
         let newArtifact: ContractArtifact;

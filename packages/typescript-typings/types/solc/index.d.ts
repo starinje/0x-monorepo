@@ -25,6 +25,7 @@ declare module 'solc' {
         sources: {
             [fileName: string]: string;
         };
+        settings: any;
     }
     export interface SolcInstance {
         compile(
@@ -32,6 +33,11 @@ declare module 'solc' {
             optimizerEnabled: number,
             findImports: (importPath: string) => ImportContents,
         ): CompilationResult;
+        compileStandardWrapper(
+            sources: any,
+            findImports: any,
+        ): any;
+
     }
     export function loadRemoteVersion(versionName: string, cb: (err: Error | null, res?: SolcInstance) => void): void;
     export function setupMethods(solcBin: any): SolcInstance;
