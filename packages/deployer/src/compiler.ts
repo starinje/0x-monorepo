@@ -164,6 +164,7 @@ export class Compiler {
 
         logUtils.log(`Compiling ${fileName} with Solidity v${solcVersion}...`);
         const source = this._contractSources[fileName];
+
         const input = {
             [fileName]: {
                 'content': source
@@ -181,35 +182,9 @@ export class Compiler {
             }
         };
 
-        const input1 = {
-            'language': 'Solidity',
-            'settings': {
-              'outputSelection': {
-                '*': {
-                  '*': [ 'evm.bytecode' ]
-                }
-              }
-            },
-            'sources': {
-              'lib.sol': {
-                'content': 'library L { function f() returns (uint) { return 7; } }'
-              },
-              'cont.sol': {
-                'content': 'import "lib.sol"; contract x { function g() { L.f(); } }'
-              }
-            }
-          };
-
-        console.log(solcInstance)
-        console.log(sourcesToCompile)
-        const sourcesToCompileJson = JSON.stringify(sourcesToCompile)
-        console.log(typeof(sourcesToCompileJson))
-
         const compiled = JSON.parse(solcInstance.compileStandardWrapper(sourcesToCompileJson, () => {
             console.log('in callback...')
         }));
-
-        console.log(JSON.stringify(compiled))
 
         if (!_.isUndefined(compiled.errors)) {
             const SOLIDITY_WARNING_PREFIX = 'Warning';
@@ -233,9 +208,6 @@ export class Compiler {
         const contractName = path.basename(fileName, constants.SOLIDITY_FILE_EXTENSION);
         const contractIdentifier = `${fileName}:${contractName}`;
 
-        console.log('right here...')
-        console.log(contractName)
-        console.log(contractIdentifier)
 
         if (_.isUndefined(compiled.contracts[fileName][contractName])) {
             throw new Error(
@@ -246,6 +218,7 @@ export class Compiler {
         console.log('interface')
         console.log(compiled.contracts[fileName][contractName].abi)
 
+        // need to fix some of these fields below....
         const abi: ContractAbi = compiled.contracts[fileName][contractName].abi;
         const bytecode = `0x${compiled.contracts[fileName][contractName].bytecode}`;
         const runtimeBytecode = `0x${compiled.contracts[fileName][contractName].runtimeBytecode}`;
